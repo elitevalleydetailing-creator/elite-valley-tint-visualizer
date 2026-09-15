@@ -1,0 +1,131 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Elite Valley 3D Tint Visualizer V8 Texture Test</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#f5f5f3;color:#171717}
+.app{max-width:1050px;margin:auto;padding:22px 16px 45px}.brand{text-align:center;color:#b88732;font-size:13px;font-weight:900;letter-spacing:3px}
+h1{text-align:center;font-size:clamp(32px,5vw,58px);margin:10px 0 4px}.sub{text-align:center;color:#777;max-width:720px;margin:0 auto 18px;line-height:1.5}
+.viewer{height:min(52vw,520px);min-height:340px;border-radius:20px;overflow:hidden;background:linear-gradient(#fbfbfa,#e6e6e3);position:relative}
+canvas{width:100%;height:100%;display:block}.hint{position:absolute;bottom:12px;left:50%;transform:translateX(-50%);background:#151515dd;color:#fff;padding:8px 13px;border-radius:999px;font-size:11px;white-space:nowrap}
+.note{text-align:center;font-weight:800;letter-spacing:2px;font-size:12px;color:#686868;margin:25px 0}
+.group{padding:25px 0;border-top:1px solid #ddd}.group h2{text-align:center;font-size:28px;margin:0 0 16px}
+.opts{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:10px;max-width:900px;margin:auto}
+.opt{border:1px solid #d4d4d4;background:#fff;border-radius:15px;padding:15px 4px;font-weight:800;font-size:16px;cursor:pointer}
+.opt.active{background:#d89b25;color:#111;border-color:#d89b25}.quote{display:block;margin:28px auto 0;border:0;border-radius:16px;background:#d89b25;padding:18px 34px;font-weight:900;font-size:18px;cursor:pointer}
+.status{display:none}
+@media(max-width:650px){.app{padding-left:10px;padding-right:10px}.opts{grid-template-columns:repeat(7,minmax(0,1fr));gap:5px}.viewer{height:390px;min-height:320px}.opt{font-size:12px;padding:12px 1px;border-radius:11px}.group h2{font-size:25px}.note{font-size:10px;letter-spacing:1.2px}}
+</style>
+</head><body><div class="app">
+<div class="brand">ELITE VALLEY WINDOW TINT</div><h1>3D Tint Visualizer</h1>
+<p class="sub">Drag the Model Y to rotate it. Select each glass section independently to preview your tint setup.</p>
+<div class="viewer" id="viewer"><div class="hint">DRAG TO ROTATE • PINCH / SCROLL TO ZOOM</div></div>
+<div class="status" id="status">Loading clean Model Y…</div>
+<div class="note">SHADE PREVIEW IS A VISUAL GUIDE. FACTORY GLASS AND LIGHTING AFFECT THE FINAL APPEARANCE.</div>
+<div id="controls"></div><button class="quote" id="quote">GET A QUOTE</button>
+</div>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/"}}</script>
+<script type="module">
+import * as THREE from "three";
+import {OrbitControls} from "three/addons/controls/OrbitControls.js";
+import {GLTFLoader} from "three/addons/loaders/GLTFLoader.js";
+
+const MODEL="./model-y-clean.glb";
+const areas=[
+ ["windshield","Windshield"],["front","Front Windows"],["rear","Rear Windows"],["back","Back Glass"]
+], shades=["None","70%","50%","35%","20%","15%","5%"];
+const state={windshield:"None",front:"None",rear:"None",back:"None"};
+const host=document.getElementById("viewer"),controlsBox=document.getElementById("controls");
+for(const [key,label] of areas){
+ const g=document.createElement("div");g.className="group";g.innerHTML=`<h2>${label}</h2><div class="opts">${shades.map(s=>`<button class="opt ${s==="None"?"active":""}" data-area="${key}" data-shade="${s}">${s}</button>`).join("")}</div>`;controlsBox.appendChild(g);
+}
+
+const scene=new THREE.Scene();scene.background=new THREE.Color(0xf1f1ef);
+const camera=new THREE.PerspectiveCamera(35,1,.01,100);camera.position.set(4.9,2.35,5.55);
+const renderer=new THREE.WebGLRenderer({antialias:true,alpha:false});renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.outputColorSpace=THREE.SRGBColorSpace;host.prepend(renderer.domElement);
+scene.add(new THREE.HemisphereLight(0xffffff,0x777777,2.4));
+const key=new THREE.DirectionalLight(0xffffff,3);key.position.set(4,7,5);scene.add(key);
+const fill=new THREE.DirectionalLight(0xffffff,1.2);fill.position.set(-5,3,-4);scene.add(fill);
+const orbit=new OrbitControls(camera,renderer.domElement);orbit.enableDamping=true;orbit.minDistance=3.3;orbit.maxDistance=11;
+
+const zones={windshield:[],front:[],rear:[],back:[]}, originals=new WeakMap();
+const zoneFor=n=>n.startsWith("Tint_Windshield")?"windshield":n.startsWith("Tint_Front_Windows")?"front":n.startsWith("Tint_Rear_Windows")?"rear":n.startsWith("Tint_Back_Glass")?"back":null;
+function mats(o){return Array.isArray(o.material)?o.material:[o.material]}
+function saveOriginal(o){originals.set(o,mats(o).map(m=>({color:m.color?.clone(),opacity:m.opacity,transparent:m.transparent,map:m.map,depthWrite:m.depthWrite,roughness:m.roughness,metalness:m.metalness})))}
+function restore(o){const a=originals.get(o);if(!a)return;mats(o).forEach((m,i)=>{const v=a[Math.min(i,a.length-1)];if(v.color&&m.color)m.color.copy(v.color);m.opacity=v.opacity;m.transparent=v.transparent;m.depthWrite=v.depthWrite;if("roughness"in m)m.roughness=v.roughness;if("metalness"in m)m.metalness=v.metalness;m.needsUpdate=true})}
+
+// Approximate visible darkness. 70% remains subtle; 5% approaches limo tint.
+const darkness={"70%":.12,"50%":.25,"35%":.38,"20%":.55,"15%":.64,"5%":.82};
+const tintTextureFiles={
+ "70%":"./tint-70-texture.png",
+ "50%":"./tint-50-texture.png",
+ "35%":"./tint-35-texture.png",
+ "20%":"./tint-20-texture.png",
+ "15%":"./tint-15-texture.png",
+ "5%":"./tint-5-texture.png"
+};
+const tintTextures={};
+const textureLoader=new THREE.TextureLoader();
+Object.entries(tintTextureFiles).forEach(([shade,url])=>{
+ textureLoader.load(url,t=>{
+   t.colorSpace=THREE.SRGBColorSpace;
+   t.wrapS=t.wrapT=THREE.ClampToEdgeWrapping;
+   t.needsUpdate=true;
+   tintTextures[shade]=t;
+ });
+});
+function apply(area,shade){
+ for(const o of zones[area]){
+  if(shade==="None"){restore(o);continue}
+  const d=darkness[shade];
+  mats(o).forEach(m=>{m.color?.setRGB(1,1,1);
+        m.map=tintTextures[shade]||null;
+        m.transparent=true;
+        m.opacity=1;
+        m.needsUpdate=true;m.depthWrite=false;if("roughness"in m)m.roughness=.06;if("metalness"in m)m.metalness=0;m.needsUpdate=true});
+ }
+}
+
+new GLTFLoader().load(MODEL,g=>{
+ const car=g.scene;
+ car.traverse(o=>{
+  if(!o.isMesh)return;
+  mats(o).forEach(m=>{m.side=THREE.DoubleSide;m.needsUpdate=true});
+  const z=zoneFor(o.name);
+  if(z){
+    // IMPORTANT: every tint zone gets its own material instance.
+    // The GLB reuses one Glass material across multiple meshes; without cloning,
+    // changing one window changes every other window that shares that material.
+    const originalMats=mats(o);
+    const independent=originalMats.map(m=>{
+      const c=m.clone();
+      c.side=THREE.DoubleSide;
+      c.needsUpdate=true;
+      return c;
+    });
+    o.material=Array.isArray(o.material)?independent:independent[0];
+    zones[z].push(o);
+    saveOriginal(o);
+  }
+ });
+ scene.add(car);
+ const box=new THREE.Box3().setFromObject(car),size=box.getSize(new THREE.Vector3()),center=box.getCenter(new THREE.Vector3());
+ car.position.set(-center.x,-box.min.y,-center.z);car.updateMatrixWorld(true);
+ orbit.target.set(0,size.y*.43,0);orbit.update();
+ document.getElementById("status").textContent="";
+},undefined,e=>{console.error(e);document.getElementById("status").textContent="Model failed to load."});
+
+document.addEventListener("click",e=>{
+ if(e.target.matches(".opt")){
+  const a=e.target.dataset.area,s=e.target.dataset.shade;state[a]=s;
+  document.querySelectorAll(`.opt[data-area="${a}"]`).forEach(b=>b.classList.toggle("active",b===e.target));apply(a,s);
+ }
+});
+document.getElementById("quote").onclick=()=>{
+ const msg=`Hi Elite Valley Window Tint! I'd like a quote for my Model Y.%0A%0AWindshield: ${state.windshield}%0AFront windows: ${state.front}%0ARear windows: ${state.rear}%0ABack glass: ${state.back}`;
+ location.href=`sms:+17472688566?body=${msg}`;
+};
+function resize(){const w=host.clientWidth,h=host.clientHeight;renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix()}addEventListener("resize",resize);resize();
+(function loop(){requestAnimationFrame(loop);orbit.update();renderer.render(scene,camera)})();
+</script></body></html>
