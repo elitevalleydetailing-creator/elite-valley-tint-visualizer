@@ -1,0 +1,177 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Elite Valley 3D Tint Visualizer v4</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#f4f4f4;color:#111}
+.app{max-width:1050px;margin:auto;padding:18px}.top{text-align:center;padding:6px 0 14px}.brand{font-size:12px;letter-spacing:2.4px;font-weight:900;color:#bd8529}
+h1{font-size:clamp(27px,5vw,43px);margin:7px 0}.sub{margin:0 auto;color:#666;max-width:700px;line-height:1.45}
+.viewer{height:min(58vw,560px);min-height:330px;background:linear-gradient(#fafafa,#e8e8e8);border-radius:18px;overflow:hidden;position:relative;box-shadow:0 8px 28px #0001}
+canvas{display:block;width:100%;height:100%}.hint{position:absolute;bottom:12px;left:50%;transform:translateX(-50%);background:#111d;color:#fff;padding:8px 12px;border-radius:999px;font-size:11px;letter-spacing:.5px;white-space:nowrap}
+.panel{background:#f4f4f4;margin-top:16px;border-radius:0;padding:0 18px 24px;box-shadow:none}
+.group{padding:34px 0 35px;border-bottom:1px solid #d8d8d8}
+.group:first-child{border-top:1px solid #d8d8d8}
+.group h3{text-align:center;margin:0 0 19px;font-size:clamp(25px,4vw,34px);font-weight:900;letter-spacing:-1px}
+.opts{display:grid;grid-template-columns:repeat(7,1fr);gap:9px;max-width:820px;margin:auto}
+.opt{min-height:76px;border:1.5px solid #d4d4d4;background:#fff;border-radius:17px;padding:12px 3px;font-size:clamp(14px,2.2vw,22px);font-weight:800;color:#5f5f5f;cursor:pointer;box-shadow:0 1px 2px #00000008}
+.opt.active{background:#d8a13c;border-color:#d8a13c;color:#161616}
+.summary{background:transparent;color:#111;border-radius:0;padding:28px 0 0;margin:0;text-align:center}
+.summary h2,.summary .grid{display:none}
+.cta{width:min(350px,80%);border:0;border-radius:22px;padding:24px 18px;margin:0 auto;background:#d8a13c;color:#151515;font-size:20px;letter-spacing:3px;font-weight:900;cursor:pointer;display:block}
+.legal{font-size:12px;color:#686868;line-height:1.55;margin:24px auto 0;text-align:center;max-width:700px;font-weight:700;letter-spacing:.7px;text-transform:uppercase}
+@media(max-width:650px){
+.app{padding:0 10px 24px}.viewer{height:390px;border-radius:10px}.panel{padding:0 8px 20px}
+.group{padding:28px 0 30px}.group h3{font-size:27px;margin-bottom:17px}
+.opts{grid-template-columns:repeat(7,1fr);gap:5px}
+.opt{min-height:64px;border-radius:14px;font-size:13px;padding:8px 1px}
+.cta{width:72%;padding:20px 12px;border-radius:19px;font-size:17px}
+}
+</style>
+</head>
+<body>
+<div class="app">
+<div class="top"><div class="brand">ELITE VALLEY WINDOW TINT</div><h1>3D Tint Visualizer</h1>
+<p class="sub">Drag the Model Y to rotate it. Preview the same 70%, 50%, 35%, 20%, 15% and 5% shade lineup shown on the Elite Valley website.</p></div>
+<div class="viewer" id="viewer"><div class="hint">DRAG TO ROTATE • PINCH / SCROLL TO ZOOM</div></div>
+<div style="text-align:center;padding:25px 12px 28px;color:#666;font-size:clamp(12px,2.4vw,16px);font-weight:800;letter-spacing:2px;line-height:1.7;text-transform:uppercase">
+Shades are a visual guide. On the car,<br>the final look also depends on your factory glass.
+</div>
+<div class="panel" id="panel"></div>
+</div>
+
+<script type="importmap">
+{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/"}}
+</script>
+<script type="module">
+
+import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js";
+import {OrbitControls} from "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/controls/OrbitControls.js";
+import {GLTFLoader} from "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/loaders/GLTFLoader.js";
+
+const MODEL_DATA="./Tesla+Model+Y+2025.glb";
+const shades=["None","70%","50%","35%","20%","15%","5%"];
+const areas=[
+ ["windshield","Windshield"],["front","Front Windows"],["rear","Rear Windows"],["back","Back Glass"]
+];
+const state={windshield:"None",front:"None",rear:"None",back:"None"};
+
+// UI already exists in page markup from the reference-layout version.
+const host=document.getElementById("viewer");
+const scene=new THREE.Scene();
+const camera=new THREE.PerspectiveCamera(32,host.clientWidth/host.clientHeight,.01,100);
+camera.position.set(5.8,2.7,6.6);
+const renderer=new THREE.WebGLRenderer({antialias:true,alpha:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2)); renderer.setSize(host.clientWidth,host.clientHeight);
+renderer.outputColorSpace=THREE.SRGBColorSpace; renderer.toneMapping=THREE.ACESFilmicToneMapping; renderer.toneMappingExposure=1.05;
+host.prepend(renderer.domElement);
+scene.add(new THREE.HemisphereLight(0xffffff,0x777777,2.3));
+const key=new THREE.DirectionalLight(0xffffff,3);key.position.set(4,7,5);scene.add(key);
+const fill=new THREE.DirectionalLight(0xffffff,1.4);fill.position.set(-5,3,-4);scene.add(fill);
+const controls=new OrbitControls(camera,renderer.domElement); controls.enableDamping=true;controls.enablePan=false;controls.minDistance=4;controls.maxDistance=11;
+controls.target.set(0,.8,0);
+
+const mapped={windshield:[],front:[],rear:[],back:[]};
+const originalMaterial=new WeakMap();
+
+function materialArray(o){return Array.isArray(o.material)?o.material:[o.material]}
+function prepMesh(o){
+ if(!o.isMesh)return;
+ const ms=materialArray(o);
+ ms.forEach(m=>{if(m){m.side=THREE.DoubleSide;m.needsUpdate=true;}});
+}
+function isBodyMirrorNode(name){
+ // The supplied GLB contains only the +X half of the body shell/glass but already
+ // contains all four wheel assemblies. Mirror only body/interior/light meshes.
+ return /^(Plane\.|Cube$|basemesh\.05[3-7])/.test(name);
+}
+function makeBodyMirror(source){
+ const mirror=source.clone(true);
+ mirror.traverse(o=>{
+   if(o.isMesh){
+     o.visible=isBodyMirrorNode(o.name);
+     if(o.visible){
+       const ms=materialArray(o);
+       o.material=ms.map(m=>m.clone()); if(o.material.length===1)o.material=o.material[0];
+       prepMesh(o);
+     }
+   }
+ });
+ mirror.scale.x*=-1;
+ return mirror;
+}
+function glassByName(root,name){
+ const arr=[]; root.traverse(o=>{if(o.isMesh&&o.name===name&&o.visible)arr.push(o)}); return arr;
+}
+function splitSide(source,which){
+ const clone=source.clone(); clone.geometry=source.geometry.clone();
+ const g=clone.geometry,pos=g.attributes.position,idx=g.index,keep=[];
+ const triCount=idx?idx.count/3:pos.count/3;
+ // Verified against the GLB: world Z = -local X + 0.1797547.
+ // The B-pillar/front-rear divider is world Z ~= -0.25 => local X ~= 0.42975.
+ for(let t=0;t<triCount;t++){
+   const ia=idx?idx.getX(t*3):t*3,ib=idx?idx.getX(t*3+1):t*3+1,ic=idx?idx.getX(t*3+2):t*3+2;
+   const cx=(pos.getX(ia)+pos.getX(ib)+pos.getX(ic))/3;
+   const front=cx<=0.429755;
+   if((which==="front"&&front)||(which==="rear"&&!front))keep.push(ia,ib,ic);
+ }
+ g.setIndex(keep);g.computeBoundingSphere();
+ const ms=materialArray(source);clone.material=ms.map(m=>m.clone());if(clone.material.length===1)clone.material=clone.material[0];
+ prepMesh(clone); clone.name=`Tint_${which}_${source.name}`; source.parent.add(clone); source.visible=false; return clone;
+}
+function rememberOriginal(o){
+ originalMaterial.set(o,materialArray(o).map(m=>({color:m.color?.clone(),opacity:m.opacity,transparent:m.transparent,roughness:m.roughness,metalness:m.metalness,depthWrite:m.depthWrite})));
+}
+function restoreOriginal(o){
+ const vals=originalMaterial.get(o); if(!vals)return;
+ materialArray(o).forEach((m,i)=>{const v=vals[Math.min(i,vals.length-1)];if(v.color&&m.color)m.color.copy(v.color);m.opacity=v.opacity;m.transparent=v.transparent;m.roughness=v.roughness;m.metalness=v.metalness;m.depthWrite=v.depthWrite;m.needsUpdate=true;});
+}
+// VLT visual calibration: black film overlay strength. Lower VLT = stronger/darker.
+const tint={"70%":.22,"50%":.34,"35%":.47,"20%":.62,"15%":.70,"5%":.86};
+function apply(area,v){
+ for(const o of mapped[area]){
+   if(v==="None"){restoreOriginal(o);continue;}
+   const strength=tint[v];
+   materialArray(o).forEach(m=>{
+     m.color?.setRGB(.035,.04,.042);m.transparent=true;m.opacity=strength;
+     if("roughness" in m)m.roughness=.08;if("metalness" in m)m.metalness=0;m.depthWrite=false;m.needsUpdate=true;
+   });
+ }
+}
+
+new GLTFLoader().load(MODEL_DATA,gltf=>{
+ const car=gltf.scene; car.traverse(prepMesh);
+ // Preserve every original node transform. Add a body-only mirrored copy; do not mirror wheels.
+ const mirror=makeBodyMirror(car);
+ const assembly=new THREE.Group();assembly.add(car);assembly.add(mirror);scene.add(assembly);
+ assembly.updateMatrixWorld(true);
+ const box=new THREE.Box3().setFromObject(assembly),size=box.getSize(new THREE.Vector3()),center=box.getCenter(new THREE.Vector3());
+ assembly.position.set(-center.x,-box.min.y,-center.z);assembly.updateMatrixWorld(true);
+
+ // Verified GLB object mapping: Plane.008 windshield, Plane.004 side windows,
+ // Plane.005 rear hatch/back glass. Plane.006 is a front light and is NEVER tinted.
+ mapped.windshield=[...glassByName(car,"Plane.008"),...glassByName(mirror,"Plane.008")];
+ mapped.back=[...glassByName(car,"Plane.005"),...glassByName(mirror,"Plane.005")];
+ const sideSources=[...glassByName(car,"Plane.004"),...glassByName(mirror,"Plane.004")];
+ for(const s of sideSources){mapped.front.push(splitSide(s,"front"));mapped.rear.push(splitSide(s,"rear"));}
+ [...mapped.windshield,...mapped.front,...mapped.rear,...mapped.back].forEach(o=>{prepMesh(o);rememberOriginal(o)});
+ controls.target.set(0,size.y*.45,0);controls.update();
+},undefined,e=>{console.error(e);host.insertAdjacentHTML('beforeend','<div style="position:absolute;inset:0;display:grid;place-items:center">3D model failed to load.</div>')});
+
+document.addEventListener("click",e=>{
+ if(e.target.matches(".opt")){
+   const a=e.target.dataset.area,v=e.target.dataset.shade;state[a]=v;
+   document.querySelectorAll(`.opt[data-area="${a}"]`).forEach(b=>b.classList.toggle("active",b===e.target));
+   const s=document.getElementById("sum-"+a);if(s)s.textContent=v;apply(a,v);
+ }
+});
+document.getElementById("quote").onclick=()=>{
+ const msg=`Hi Elite Valley Window Tint! I'd like a quote for my Model Y tint setup:\n\nWindshield: ${state.windshield}\nFront windows: ${state.front}\nRear windows: ${state.rear}\nBack glass: ${state.back}`;
+ location.href=`sms:+17472688566?body=${encodeURIComponent(msg)}`;
+};
+function resize(){const w=host.clientWidth,h=host.clientHeight;camera.aspect=w/h;camera.updateProjectionMatrix();renderer.setSize(w,h)}
+addEventListener("resize",resize);
+(function loop(){requestAnimationFrame(loop);controls.update();renderer.render(scene,camera)})();
+
+</script>
+</body></html>
